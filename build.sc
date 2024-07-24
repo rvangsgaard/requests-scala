@@ -6,6 +6,9 @@ import $ivy.`com.github.lolgab::mill-mima::0.0.23`
 
 import de.tobiasroeser.mill.vcs.version.VcsVersion
 import com.github.lolgab.mill.mima._
+import mill.testrunner.TestResult
+
+import java.util.UUID
 
 val dottyVersion = sys.props.get("dottyVersion")
 
@@ -42,5 +45,34 @@ trait RequestsModule extends CrossScalaModule with PublishModule with Mima {
       ivy"com.lihaoyi::utest::0.7.10",
       ivy"com.lihaoyi::ujson::1.3.13"
     )
+
+    val containerName = "mill-httpbin-" + UUID.randomUUID().toString
+
+    override protected def testTask(args: Task[Seq[String]], globSelectors: Task[Seq[String]]): Task[(String, Seq[TestResult])] = T.task{
+      val result: ((Unit, (String, Seq[TestResult])), Unit) = httpbin(containerName).zip(super.testTask(args, globSelectors)).zip(httpbinStop(containerName))()
+      result._1._2
+
+//      httpbin(containerName)()
+//      val result = super.testTask(args, globSelectors)()
+//      httpbinStop(containerName)()
+//      result
+
+//      val result: Task[(String, Seq[TestResult])] = httpbin(containerName).map(_ => super.testTask(args, globSelectors)).map(result => { httpbinStop(containerName); result })()
+//      result() // Not working.
+    }
+
+    def httpbin(containerName: String): Task[Unit] = T.task {
+      println(s"Starting httpbin locally using container name '${containerName}'")
+      os.proc("docker", "pull", "kennethreitz/httpbin").call(stdout = os.Inherit)
+      os.proc("docker", "run", "--detach", "--name", containerName, "-p", "80:80", "kennethreitz/httpbin").call(stdout = os.Inherit)
+      ()
+    }
+
+    def httpbinStop(containerName: String): Task[Unit] = T.task {
+      println(s"Stopping httpbin locally (${containerName})")
+      os.proc("docker", "stop", containerName).call(stdout = os.Inherit)
+      os.proc("docker", "rm", containerName).call(stdout = os.Inherit)
+      ()
+    }
   }
 }
